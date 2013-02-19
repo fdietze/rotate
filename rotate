@@ -1,0 +1,131 @@
+#!/bin/bash
+
+function usage
+{
+    cat <<EOT
+
+Rotates the screen, rotates Wacom-inputs and adjusts the GNOME font rendering.
+
+Current Orientation: $orientation
+
+Usage:
+    `basename $0` <target> [output]
+
+Targets:
+    normal      landscape
+    inverted    inverted landscape
+    left        portrait left
+    right       portrait right
+    cw          clockwise
+    ccw         counterclockwise
+    180         180 degrees
+    horizontal  flip between normal/inverted
+    vertical    flip between left/right
+
+Connected outputs you can use:
+`echo "$connectedoutputs" | sed 's/^/    /'`
+    (default is $defaultoutput)
+
+EOT
+}
+function getdevices
+{
+	xsetwacom --list devices | sed -e 's/\s\s.*//g'
+}
+
+function normal
+{
+    xrandr --output "$output" --rotate normal
+    getdevices | xargs -Idevice xsetwacom set device Rotate NONE
+    gconftool-2 --type string --set /desktop/gnome/font_rendering/rgba_order "rgb"
+}
+function inverted
+{
+    xrandr --output "$output" --rotate inverted
+    getdevices | xargs -Idevice xsetwacom set device Rotate HALF
+    gconftool-2 --type string --set /desktop/gnome/font_rendering/rgba_order "bgr"
+}
+function left
+{
+    xrandr --output "$output" --rotate left
+    getdevices | xargs -Idevice xsetwacom set device Rotate CCW
+    gconftool-2 --type string --set /desktop/gnome/font_rendering/rgba_order "vrgb"
+}
+function right
+{
+    xrandr --output "$output" --rotate right
+    getdevices | xargs -Idevice xsetwacom set device Rotate CW
+    gconftool-2 --type string --set /desktop/gnome/font_rendering/rgba_order "vbgr"
+}
+
+# detect connected outputs and define default output
+connectedoutputs=`xrandr --query --verbose | grep ' connected' | awk '{print $1}'`
+if [ `echo "$connectedoutputs" | grep LVDS | wc -l` -ge 1 ]
+then
+    defaultoutput=`echo "$connectedoutputs" | grep LVDS | head -1`
+else
+    defaultoutput=`echo "$connectedoutputs" | head -1`
+fi
+
+# override default output if wanted
+if [ $# -lt 2 ]
+then
+    output=$defaultoutput
+else
+    output=$2
+fi
+
+# get orientation of selected output
+orientation=`xrandr -q --verbose | grep "$output" | awk '{print $5}'`
+
+# wrong parameter count, print usage
+if [ $# -gt 2 ]
+then
+    usage
+    exit
+fi
+
+
+target=$1
+
+case "$target" in
+    normal)     normal;;
+    inverted)   inverted;;
+    left)       left;;
+    right)      right;;
+    cw)
+        case "$orientation" in
+            normal)     right;;
+            right)      inverted;;
+            inverted)   left;;
+            left)       normal;;
+        esac;;
+    ccw)
+        case "$orientation" in
+            normal)     left;;
+            left)       inverted;;
+            inverted)   right;;
+            right)      normal;;
+        esac;;
+    180)
+        case "$orientation" in
+            normal)     inverted;;
+            left)       right   ;;
+            inverted)   normal  ;;
+            right)      left    ;;
+        esac;;
+    horizontal)
+        case "$orientation" in
+            normal)     inverted;;
+            inverted)   normal;;
+            *)          normal;;
+        esac;;
+    vertical)
+        case "$orientation" in
+            left)       right;;
+            right)      left;;
+            *)          right;;
+        esac;;
+    *)
+        usage;;
+esac
